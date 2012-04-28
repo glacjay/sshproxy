@@ -9,3 +9,6 @@ HEADERS += \
 SOURCES += \
     main.cpp \
     MainDialog.cpp \
+
+RESOURCES += \
+    sshproxy.qrc \

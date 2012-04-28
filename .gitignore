@@ -1,6 +1,9 @@
 *.o
 
+*.app
+
 moc_*
+qrc_*
 Makefile
 
 sshproxy
