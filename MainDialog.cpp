@@ -1,28 +1,37 @@
-#include <QtGui/QApplication>
-#include <QtGui/QAction>
-#include <QtGui/QGroupBox>
-#include <QtGui/QLabel>
-#include <QtGui/QMenu>
-#include <QtGui/QSpacerItem>
-#include <QtGui/QSplitter>
-#include <QtGui/QVBoxLayout>
+#include <QApplication>
+#include <QAction>
+#include <QGroupBox>
+#include <QLabel>
+#include <QMenu>
+#include <QSpacerItem>
+#include <QSplitter>
+#include <QVBoxLayout>
 
 #include "MainDialog.hpp"
 
 MainDialog::MainDialog(QWidget *parent) :
     QDialog(parent),
     mHostEdit(new QLineEdit),
-    mPortEdit(new QLineEdit("22")),
+    mPortEdit(new QLineEdit),
     mUserEdit(new QLineEdit),
     mPswdEdit(new QLineEdit),
-    mLAddrEdit(new QLineEdit("127.0.0.1")),
-    mLPortEdit(new QLineEdit("1077")),
-    mWaitEdit(new QLineEdit("10")),
+    mLAddrEdit(new QLineEdit),
+    mLPortEdit(new QLineEdit),
+    mWaitEdit(new QLineEdit),
     mCtrlBtn(new QPushButton(tr("Connect"))),
     mQuitBtn(new QPushButton(tr("Quit"))),
-    mLogList(new QListWidget)
+    mLogList(new QListWidget),
+    mSettings(new QSettings(QSettings::IniFormat, QSettings::UserScope,
+                            "glacjay", "sshproxy"))
 {
     setWindowTitle(tr("SSH Proxy"));
+
+    mHostEdit->setText(mSettings->value("ssh/host").toString());
+    mPortEdit->setText(mSettings->value("ssh/port", "22").toString());
+    mUserEdit->setText(mSettings->value("ssh/user").toString());
+    mLAddrEdit->setText(mSettings->value("ssh/laddr", "127.0.0.1").toString());
+    mLPortEdit->setText(mSettings->value("ssh/lport", "1077").toString());
+    mWaitEdit->setText(mSettings->value("ssh/wait", "10").toString());
 
     QLabel *hostLabel = new QLabel(tr("SSH Host:"));
     hostLabel->setBuddy(mHostEdit);
@@ -87,7 +96,7 @@ MainDialog::MainDialog(QWidget *parent) :
     resize(800, 600);
 
     connect(mCtrlBtn, SIGNAL(clicked(void)), this, SLOT(on_mCtrlBtn_clicked(void)));
-    connect(mQuitBtn, SIGNAL(clicked(void)), this, SLOT(on_mQuitBtn_clicked(void)));
+    connect(mQuitBtn, SIGNAL(clicked(void)), this, SLOT(onQuit(void)));
 
     QPixmap pixmap(":/icon.png");
     QIcon icon(pixmap);
@@ -105,7 +114,7 @@ MainDialog::MainDialog(QWidget *parent) :
 
     QAction *quitAction = new QAction(tr("Quit"), this);
     connect(quitAction, SIGNAL(triggered(void)),
-            this, SLOT(on_quitAction_triggered(void)));
+            this, SLOT(onQuit(void)));
 
     QMenu *trayMenu = new QMenu;
     trayMenu->addAction(toggleAction);
@@ -113,10 +122,28 @@ MainDialog::MainDialog(QWidget *parent) :
     trayMenu->addAction(quitAction);
 
     mTray->setContextMenu(trayMenu);
+
+    connect(qApp, SIGNAL(aboutToQuit(void)), this, SLOT(onQuit(void)));
+
+    if (mHostEdit->text().isEmpty())
+        mHostEdit->setFocus();
+    else if (mPortEdit->text().isEmpty())
+        mPortEdit->setFocus();
+    else if (mUserEdit->text().isEmpty())
+        mUserEdit->setFocus();
+    else if (mPswdEdit->text().isEmpty())
+        mPswdEdit->setFocus();
+    else if (mLAddrEdit->text().isEmpty())
+        mLAddrEdit->setFocus();
+    else if (mLPortEdit->text().isEmpty())
+        mLPortEdit->setFocus();
+    else if (mWaitEdit->text().isEmpty())
+        mWaitEdit->setFocus();
 }
 
 MainDialog::~MainDialog(void)
 {
+    delete mSettings;
 }
 
 void MainDialog::closeEvent(QCloseEvent *event)
@@ -130,8 +157,9 @@ void MainDialog::on_mCtrlBtn_clicked(void)
     mLogList->addItem("connect");
 }
 
-void MainDialog::on_mQuitBtn_clicked(void)
+void MainDialog::onQuit(void)
 {
+    saveSettings();
     qApp->exit(0);
 }
 
@@ -155,7 +183,12 @@ void MainDialog::on_toggleAction_triggered(void)
     this->setVisible(!this->isVisible());
 }
 
-void MainDialog::on_quitAction_triggered(void)
+void MainDialog::saveSettings(void)
 {
-    qApp->exit(0);
+    mSettings->setValue("ssh/host", mHostEdit->text());
+    mSettings->setValue("ssh/port", mPortEdit->text());
+    mSettings->setValue("ssh/user", mUserEdit->text());
+    mSettings->setValue("ssh/laddr", mLAddrEdit->text());
+    mSettings->setValue("ssh/lport", mLPortEdit->text());
+    mSettings->setValue("ssh/wait", mWaitEdit->text());
 }

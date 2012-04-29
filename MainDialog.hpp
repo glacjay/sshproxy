@@ -1,12 +1,13 @@
 #ifndef HEADER__MAIN_DIALOG_HPP
 #define HEADER__MAIN_DIALOG_HPP
 
-#include <QtGui/QCloseEvent>
-#include <QtGui/QDialog>
-#include <QtGui/QLineEdit>
-#include <QtGui/QListWidget>
-#include <QtGui/QPushButton>
-#include <QtGui/QSystemTrayIcon>
+#include <QCloseEvent>
+#include <QDialog>
+#include <QLineEdit>
+#include <QListWidget>
+#include <QPushButton>
+#include <QSettings>
+#include <QSystemTrayIcon>
 
 class MainDialog : public QDialog
 {
@@ -20,11 +21,14 @@ protected:
     void closeEvent(QCloseEvent *event);
 
 private slots:
+    void onQuit(void);
+
     void on_mCtrlBtn_clicked(void);
-    void on_mQuitBtn_clicked(void);
     void on_mTray_activated(QSystemTrayIcon::ActivationReason reason);
     void on_toggleAction_triggered(void);
-    void on_quitAction_triggered(void);
+
+private:
+    void saveSettings(void);
 
 private:
     QLineEdit *mHostEdit;
@@ -41,6 +45,8 @@ private:
     QListWidget *mLogList;
 
     QSystemTrayIcon *mTray;
+
+    QSettings *mSettings;
 };
 
 #endif
