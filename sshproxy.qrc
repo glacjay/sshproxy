@@ -2,6 +2,13 @@
 
 <RCC version="1.0">
     <qresource>
-        <file>icon.png</file>
+        <file>icon-stopped.png</file>
+        <file>icon-connecting.png</file>
+        <file>icon-connected.png</file>
+        <file>icon-sleeping.png</file>
+
+        <file>icon-info.png</file>
+        <file>icon-warn.png</file>
+        <file>icon-error.png</file>
     </qresource>
 </RCC>

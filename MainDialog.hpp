@@ -9,6 +9,9 @@
 #include <QSettings>
 #include <QSystemTrayIcon>
 
+#include "constants.hpp"
+#include "SshThread.hpp"
+
 class MainDialog : public QDialog
 {
     Q_OBJECT
@@ -27,8 +30,16 @@ private slots:
     void on_mTray_activated(QSystemTrayIcon::ActivationReason reason);
     void on_toggleAction_triggered(void);
 
+    void threadStart(void);
+    void threadStop(void);
+
+    void setSshStatus(SshStatus status);
+    void addLogMsg(LogLevel level, const QString &msg);
+
 private:
     void saveSettings(void);
+
+    void startSshThread(void);
 
 private:
     QLineEdit *mHostEdit;
@@ -44,9 +55,21 @@ private:
 
     QListWidget *mLogList;
 
+    QIcon mInfoIcon;
+    QIcon mWarnIcon;
+    QIcon mErrorIcon;
+
     QSystemTrayIcon *mTray;
 
+    QIcon mStoppedIcon;
+    QIcon mConnectingIcon;
+    QIcon mConnectedIcon;
+    QIcon mSleepingIcon;
+
     QSettings *mSettings;
+
+    SshConfig mConfig;
+    SshThread *mSshThread;
 };
 
 #endif

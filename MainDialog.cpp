@@ -1,5 +1,8 @@
+#include <assert.h>
+
 #include <QApplication>
 #include <QAction>
+#include <QDateTime>
 #include <QGroupBox>
 #include <QLabel>
 #include <QMenu>
@@ -9,22 +12,31 @@
 
 #include "MainDialog.hpp"
 
-MainDialog::MainDialog(QWidget *parent) :
-    QDialog(parent),
-    mHostEdit(new QLineEdit),
-    mPortEdit(new QLineEdit),
-    mUserEdit(new QLineEdit),
-    mPswdEdit(new QLineEdit),
-    mLAddrEdit(new QLineEdit),
-    mLPortEdit(new QLineEdit),
-    mWaitEdit(new QLineEdit),
-    mCtrlBtn(new QPushButton(tr("Connect"))),
-    mQuitBtn(new QPushButton(tr("Quit"))),
-    mLogList(new QListWidget),
-    mSettings(new QSettings(QSettings::IniFormat, QSettings::UserScope,
-                            "glacjay", "sshproxy"))
+MainDialog::MainDialog(QWidget *parent)
+    : QDialog(parent)
+    , mHostEdit(new QLineEdit)
+    , mPortEdit(new QLineEdit)
+    , mUserEdit(new QLineEdit)
+    , mPswdEdit(new QLineEdit)
+    , mLAddrEdit(new QLineEdit)
+    , mLPortEdit(new QLineEdit)
+    , mWaitEdit(new QLineEdit)
+    , mCtrlBtn(new QPushButton(tr("Start")))
+    , mQuitBtn(new QPushButton(tr("Quit")))
+    , mLogList(new QListWidget)
+    , mInfoIcon(QPixmap(":/icon-info.png"))
+    , mWarnIcon(QPixmap(":/icon-warn.png"))
+    , mErrorIcon(QPixmap(":/icon-error.png"))
+    , mStoppedIcon(QPixmap(":/icon-stopped.png"))
+    , mConnectingIcon(QPixmap(":/icon-connecting.png"))
+    , mConnectedIcon(QPixmap(":/icon-connected.png"))
+    , mSleepingIcon(QPixmap(":/icon-sleeping.png"))
+    , mSettings(new QSettings(QSettings::IniFormat, QSettings::UserScope,
+                              "glacjay", "sshproxy", this))
+    , mSshThread(new SshThread(&mConfig, this))
 {
     setWindowTitle(tr("SSH Proxy"));
+    setWindowIcon(mConnectedIcon);
 
     mHostEdit->setText(mSettings->value("ssh/host").toString());
     mPortEdit->setText(mSettings->value("ssh/port", "22").toString());
@@ -32,6 +44,12 @@ MainDialog::MainDialog(QWidget *parent) :
     mLAddrEdit->setText(mSettings->value("ssh/laddr", "127.0.0.1").toString());
     mLPortEdit->setText(mSettings->value("ssh/lport", "1077").toString());
     mWaitEdit->setText(mSettings->value("ssh/wait", "10").toString());
+
+    mPortEdit->setValidator(new QIntValidator(1, 65535));
+    mPswdEdit->setEchoMode(QLineEdit::Password);
+    mLPortEdit->setValidator(new QIntValidator(1, 65535));
+    mWaitEdit->setValidator(new QIntValidator);
+    mLogList->setWordWrap(true);
 
     QLabel *hostLabel = new QLabel(tr("SSH Host:"));
     hostLabel->setBuddy(mHostEdit);
@@ -48,8 +66,6 @@ MainDialog::MainDialog(QWidget *parent) :
     QLabel *waitLabel = new QLabel(tr("Seconds wait to reconnect:"));
     waitLabel->setBuddy(mWaitEdit);
 
-    mPswdEdit->setEchoMode(QLineEdit::Password);
-
     QVBoxLayout *inputLayout = new QVBoxLayout;
     inputLayout->addWidget(hostLabel);
     inputLayout->addWidget(mHostEdit);
@@ -65,18 +81,12 @@ MainDialog::MainDialog(QWidget *parent) :
     inputLayout->addWidget(mLPortEdit);
     inputLayout->addWidget(waitLabel);
     inputLayout->addWidget(mWaitEdit);
+    inputLayout->insertStretch(-1);
+    inputLayout->addWidget(mCtrlBtn);
+    inputLayout->addWidget(mQuitBtn);
 
     QGroupBox *inputGroup = new QGroupBox(tr("Settings"));
     inputGroup->setLayout(inputLayout);
-
-    QVBoxLayout *leftLayout = new QVBoxLayout;
-    leftLayout->addWidget(inputGroup);
-    leftLayout->insertStretch(-1);
-    leftLayout->addWidget(mCtrlBtn);
-    leftLayout->addWidget(mQuitBtn);
-
-    QWidget *leftWidget = new QWidget;
-    leftWidget->setLayout(leftLayout);
 
     QVBoxLayout *logLayout = new QVBoxLayout;
     logLayout->addWidget(mLogList);
@@ -85,7 +95,7 @@ MainDialog::MainDialog(QWidget *parent) :
     logGroup->setLayout(logLayout);
 
     QSplitter *splitter = new QSplitter(Qt::Horizontal);
-    splitter->addWidget(leftWidget);
+    splitter->addWidget(inputGroup);
     splitter->addWidget(logGroup);
     splitter->setStretchFactor(1, 5);
 
@@ -98,12 +108,10 @@ MainDialog::MainDialog(QWidget *parent) :
     connect(mCtrlBtn, SIGNAL(clicked(void)), this, SLOT(on_mCtrlBtn_clicked(void)));
     connect(mQuitBtn, SIGNAL(clicked(void)), this, SLOT(onQuit(void)));
 
-    QPixmap pixmap(":/icon.png");
-    QIcon icon(pixmap);
-    mTray = new QSystemTrayIcon(icon);
+    mTray = new QSystemTrayIcon(mStoppedIcon);
     mTray->show();
 
-    qApp->setWindowIcon(icon);
+    setSshStatus(StatStopped);
 
     connect(mTray, SIGNAL(activated(QSystemTrayIcon::ActivationReason)),
             this, SLOT(on_mTray_activated(QSystemTrayIcon::ActivationReason)));
@@ -125,6 +133,14 @@ MainDialog::MainDialog(QWidget *parent) :
 
     connect(qApp, SIGNAL(aboutToQuit(void)), this, SLOT(onQuit(void)));
 
+    connect(mSshThread, SIGNAL(started(void)), this, SLOT(threadStart(void)));
+    connect(mSshThread, SIGNAL(finished(void)), this, SLOT(threadStop(void)));
+    connect(mSshThread, SIGNAL(terminated(void)), this, SLOT(threadStop(void)));
+    connect(mSshThread, SIGNAL(sshStatusChanged(SshStatus)),
+            this, SLOT(setSshStatus(SshStatus)));
+    connect(mSshThread, SIGNAL(logging(LogLevel, const QString &)),
+            this, SLOT(addLogMsg(LogLevel, const QString &)));
+
     if (mHostEdit->text().isEmpty())
         mHostEdit->setFocus();
     else if (mPortEdit->text().isEmpty())
@@ -143,7 +159,8 @@ MainDialog::MainDialog(QWidget *parent) :
 
 MainDialog::~MainDialog(void)
 {
-    delete mSettings;
+    mSshThread->stop();
+    mSshThread->wait();
 }
 
 void MainDialog::closeEvent(QCloseEvent *event)
@@ -154,7 +171,12 @@ void MainDialog::closeEvent(QCloseEvent *event)
 
 void MainDialog::on_mCtrlBtn_clicked(void)
 {
-    mLogList->addItem("connect");
+    if (mCtrlBtn->text() == tr("Start"))
+        startSshThread();
+    else if (mCtrlBtn->text() == tr("Stop"))
+        mSshThread->stop();
+    else
+        assert(false);
 }
 
 void MainDialog::onQuit(void)
@@ -183,6 +205,70 @@ void MainDialog::on_toggleAction_triggered(void)
     this->setVisible(!this->isVisible());
 }
 
+void MainDialog::threadStart(void)
+{
+    mCtrlBtn->setText(tr("Stop"));
+}
+
+void MainDialog::threadStop(void)
+{
+    mCtrlBtn->setText(tr("Start"));
+}
+
+void MainDialog::setSshStatus(SshStatus status)
+{
+    switch (status)
+    {
+        case StatStopped:
+            qApp->setWindowIcon(mStoppedIcon);
+            mTray->setIcon(mStoppedIcon);
+            break;
+        case StatConnecting:
+            qApp->setWindowIcon(mConnectingIcon);
+            mTray->setIcon(mConnectingIcon);
+            break;
+        case StatConnected:
+            qApp->setWindowIcon(mConnectedIcon);
+            mTray->setIcon(mConnectedIcon);
+            break;
+        case StatSleeping:
+            qApp->setWindowIcon(mSleepingIcon);
+            mTray->setIcon(mSleepingIcon);
+            break;
+        default:
+            assert(false);
+    }
+}
+
+void MainDialog::addLogMsg(LogLevel level, const QString &msg)
+{
+    QIcon icon;
+    switch (level)
+    {
+        case LogDebug:
+            /* No icon for debugging msg */
+            break;
+        case LogInfo:
+            icon = mInfoIcon;
+            break;
+        case LogWarn:
+            icon = mWarnIcon;
+            break;
+        case LogError:
+            icon = mErrorIcon;
+            break;
+        default:
+            assert(false);
+    }
+
+    while (mLogList->count() >= MaxTotalLog)
+        mLogList->removeItemWidget(mLogList->item(0));
+
+    QString time = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
+    mLogList->addItem(new QListWidgetItem(icon, QString("%1 %2").arg(time).arg(msg)));
+    mLogList->scrollToBottom();
+}
+
 void MainDialog::saveSettings(void)
 {
     mSettings->setValue("ssh/host", mHostEdit->text());
@@ -191,4 +277,50 @@ void MainDialog::saveSettings(void)
     mSettings->setValue("ssh/laddr", mLAddrEdit->text());
     mSettings->setValue("ssh/lport", mLPortEdit->text());
     mSettings->setValue("ssh/wait", mWaitEdit->text());
+}
+
+void MainDialog::startSshThread(void)
+{
+    mConfig.host = mHostEdit->text();
+    if (mConfig.host.isEmpty())
+    {
+        addLogMsg(LogError, "SSH server's host name may not be empty!");
+        mHostEdit->setFocus();
+        return;
+    }
+    mConfig.port = mPortEdit->text().toInt();
+    if (mConfig.port == 0)
+    {
+        addLogMsg(LogWarn, "SSH server's port may not be empty. I assume you mean 22");
+        mPortEdit->setText("22");
+        mConfig.port = 22;
+    }
+    mConfig.user = mUserEdit->text();
+    if (mConfig.user.isEmpty())
+    {
+        addLogMsg(LogError, "Username may not be empty!");
+        mUserEdit->setFocus();
+        return;
+    }
+    mConfig.pswd = mPswdEdit->text();
+    if (mConfig.pswd.isEmpty())
+        addLogMsg(LogWarn, "Password should not be empty in general.");
+    mConfig.laddr = mLAddrEdit->text();
+    if (mConfig.laddr.isEmpty())
+    {
+        addLogMsg(LogWarn, "Local listen address is empty. I assume you mean 127.0.0.1");
+        mLAddrEdit->setText("127.0.0.1");
+        mConfig.laddr = "127.0.0.1";
+    }
+    mConfig.lport = mLPortEdit->text().toInt();
+    if (mConfig.lport == 0)
+    {
+        addLogMsg(LogError, "Local listen port may not be empty!");
+        mLPortEdit->setText("1077");
+        mLPortEdit->setFocus();
+        return;
+    }
+    mConfig.wait = mWaitEdit->text().toInt();
+
+    mSshThread->start();
 }
