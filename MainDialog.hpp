@@ -5,12 +5,12 @@
 #include <QDialog>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QProcess>
 #include <QPushButton>
 #include <QSettings>
 #include <QSystemTrayIcon>
 
 #include "constants.hpp"
-#include "SshThread.hpp"
 
 class MainDialog : public QDialog
 {
@@ -30,8 +30,10 @@ private slots:
     void on_mTray_activated(QSystemTrayIcon::ActivationReason reason);
     void on_toggleAction_triggered(void);
 
-    void threadStart(void);
-    void threadStop(void);
+    void on_mProcess_started(void);
+    void on_mProcess_finished(int exitCode, QProcess::ExitStatus exitStatus);
+    void on_mProcess_error(QProcess::ProcessError error);
+    void on_mProcess_readyReadStandardOutput(void);
 
     void setSshStatus(SshStatus status);
     void addLogMsg(LogLevel level, const QString &msg);
@@ -39,7 +41,8 @@ private slots:
 private:
     void saveSettings(void);
 
-    void startSshThread(void);
+    void startRunning(void);
+    void stopRunning(void);
 
 private:
     QLineEdit *mHostEdit;
@@ -68,8 +71,8 @@ private:
 
     QSettings *mSettings;
 
-    SshConfig mConfig;
-    SshThread *mSshThread;
+    bool mIsKeepRunning;
+    QProcess *mProcess;
 };
 
 #endif

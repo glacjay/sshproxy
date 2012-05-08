@@ -33,7 +33,8 @@ MainDialog::MainDialog(QWidget *parent)
     , mSleepingIcon(QPixmap(":/icon-sleeping.png"))
     , mSettings(new QSettings(QSettings::IniFormat, QSettings::UserScope,
                               "glacjay", "sshproxy", this))
-    , mSshThread(new SshThread(&mConfig, this))
+    , mIsKeepRunning(false)
+    , mProcess(new QProcess(this))
 {
     setWindowTitle(tr("SSH Proxy"));
     setWindowIcon(mConnectedIcon);
@@ -50,6 +51,8 @@ MainDialog::MainDialog(QWidget *parent)
     mLPortEdit->setValidator(new QIntValidator(1, 65535));
     mWaitEdit->setValidator(new QIntValidator);
     mLogList->setWordWrap(true);
+
+    mProcess->setProcessChannelMode(QProcess::MergedChannels);
 
     QLabel *hostLabel = new QLabel(tr("SSH Host:"));
     hostLabel->setBuddy(mHostEdit);
@@ -133,13 +136,13 @@ MainDialog::MainDialog(QWidget *parent)
 
     connect(qApp, SIGNAL(aboutToQuit(void)), this, SLOT(onQuit(void)));
 
-    connect(mSshThread, SIGNAL(started(void)), this, SLOT(threadStart(void)));
-    connect(mSshThread, SIGNAL(finished(void)), this, SLOT(threadStop(void)));
-    connect(mSshThread, SIGNAL(terminated(void)), this, SLOT(threadStop(void)));
-    connect(mSshThread, SIGNAL(sshStatusChanged(SshStatus)),
-            this, SLOT(setSshStatus(SshStatus)));
-    connect(mSshThread, SIGNAL(logging(LogLevel, const QString &)),
-            this, SLOT(addLogMsg(LogLevel, const QString &)));
+    connect(mProcess, SIGNAL(started(void)), this, SLOT(on_mProcess_started(void)));
+    connect(mProcess, SIGNAL(finished(int, QProcess::ExitStatus)),
+            this, SLOT(on_mProcess_finished(int, QProcess::ExitStatus)));
+    connect(mProcess, SIGNAL(error(QProcess::ProcessError)),
+            this, SLOT(on_mProcess_error(QProcess::ProcessError)));
+    connect(mProcess, SIGNAL(readyReadStandardOutput(void)),
+            this, SLOT(on_mProcess_readyReadStandardOutput(void)));
 
     if (mHostEdit->text().isEmpty())
         mHostEdit->setFocus();
@@ -159,8 +162,7 @@ MainDialog::MainDialog(QWidget *parent)
 
 MainDialog::~MainDialog(void)
 {
-    mSshThread->stop();
-    mSshThread->wait();
+    stopRunning();
 }
 
 void MainDialog::closeEvent(QCloseEvent *event)
@@ -172,9 +174,9 @@ void MainDialog::closeEvent(QCloseEvent *event)
 void MainDialog::on_mCtrlBtn_clicked(void)
 {
     if (mCtrlBtn->text() == tr("Start"))
-        startSshThread();
+        startRunning();
     else if (mCtrlBtn->text() == tr("Stop"))
-        mSshThread->stop();
+        stopRunning();
     else
         assert(false);
 }
@@ -205,14 +207,42 @@ void MainDialog::on_toggleAction_triggered(void)
     this->setVisible(!this->isVisible());
 }
 
-void MainDialog::threadStart(void)
+void MainDialog::on_mProcess_started(void)
 {
-    mCtrlBtn->setText(tr("Stop"));
+    addLogMsg(LogInfo, "connecting to the SSH server...");
+    setSshStatus(StatConnecting);
 }
 
-void MainDialog::threadStop(void)
+void MainDialog::on_mProcess_finished(int exitCode, QProcess::ExitStatus exitStatus)
 {
-    mCtrlBtn->setText(tr("Start"));
+    addLogMsg(LogInfo, QString("process finished with code %1 and status %2")
+              .arg(exitCode)
+              .arg(exitStatus == QProcess::NormalExit ? "NormalExit" : "CrashExit"));
+    setSshStatus(StatSleeping);
+
+    /* TODO setup restart timer */
+}
+
+void MainDialog::on_mProcess_error(QProcess::ProcessError error)
+{
+    addLogMsg(LogWarn, QString("process error %1").arg(error));
+    setSshStatus(StatSleeping);
+    mProcess->kill();
+
+    /* TODO setup restart timer */
+}
+
+void MainDialog::on_mProcess_readyReadStandardOutput(void)
+{
+    char line[1024];
+    while (mProcess->readLine(line, sizeof(line)) > 0)
+    {
+        QString msg(line);
+        addLogMsg(LogInfo, msg.remove('\n'));
+
+        if (msg.contains("Entering interactive "))
+            setSshStatus(StatConnected);
+    }
 }
 
 void MainDialog::setSshStatus(SshStatus status)
@@ -279,48 +309,74 @@ void MainDialog::saveSettings(void)
     mSettings->setValue("ssh/wait", mWaitEdit->text());
 }
 
-void MainDialog::startSshThread(void)
+void MainDialog::startRunning(void)
 {
-    mConfig.host = mHostEdit->text();
-    if (mConfig.host.isEmpty())
+    mIsKeepRunning = true;
+    mCtrlBtn->setText(tr("Stop"));
+
+    if (mHostEdit->text().isEmpty())
     {
         addLogMsg(LogError, "SSH server's host name may not be empty!");
         mHostEdit->setFocus();
         return;
     }
-    mConfig.port = mPortEdit->text().toInt();
-    if (mConfig.port == 0)
+
+    if (mPortEdit->text().toInt() == 0)
     {
         addLogMsg(LogWarn, "SSH server's port may not be empty. I assume you mean 22");
         mPortEdit->setText("22");
-        mConfig.port = 22;
     }
-    mConfig.user = mUserEdit->text();
-    if (mConfig.user.isEmpty())
+
+    if (mUserEdit->text().isEmpty())
     {
         addLogMsg(LogError, "Username may not be empty!");
         mUserEdit->setFocus();
         return;
     }
-    mConfig.pswd = mPswdEdit->text();
-    if (mConfig.pswd.isEmpty())
+
+    if (mPswdEdit->text().isEmpty())
+    {
         addLogMsg(LogWarn, "Password should not be empty in general.");
-    mConfig.laddr = mLAddrEdit->text();
-    if (mConfig.laddr.isEmpty())
+        mPswdEdit->setFocus();
+    }
+
+    if (mLAddrEdit->text().isEmpty())
     {
         addLogMsg(LogWarn, "Local listen address is empty. I assume you mean 127.0.0.1");
         mLAddrEdit->setText("127.0.0.1");
-        mConfig.laddr = "127.0.0.1";
     }
-    mConfig.lport = mLPortEdit->text().toInt();
-    if (mConfig.lport == 0)
+
+    if (mLPortEdit->text().toInt() == 0)
     {
         addLogMsg(LogError, "Local listen port may not be empty!");
         mLPortEdit->setText("1077");
         mLPortEdit->setFocus();
         return;
     }
-    mConfig.wait = mWaitEdit->text().toInt();
 
-    mSshThread->start();
+    QStringList arguments;
+    arguments << "-p" << mPortEdit->text();
+    arguments << "-vN";
+    arguments << "-D" << QString("%1:%2").arg(mLAddrEdit->text()).arg(mLPortEdit->text());
+    arguments << "-o" << "StrictHostKeyChecking=no";
+    arguments << "-o" << "PreferredAuthentications=password";
+    arguments << "-l" << mUserEdit->text();
+    arguments << mHostEdit->text();
+
+    QStringList env;
+    env << "DISPLAY=:1";
+    env << "SSH_ASKPASS=/Users/jay/bin/sshpass";
+    env << QString("SSH_PASSWD=%1").arg(mPswdEdit->text());
+    mProcess->setEnvironment(env);
+
+    mProcess->start("/usr/bin/ssh", arguments);
+}
+
+void MainDialog::stopRunning(void)
+{
+    mIsKeepRunning = false;
+    mCtrlBtn->setText(tr("Start"));
+
+    if (mProcess->state() != QProcess::NotRunning)
+        mProcess->kill();
 }
