@@ -35,6 +35,7 @@ MainDialog::MainDialog(QWidget *parent)
                               "glacjay", "sshproxy", this))
     , mIsKeepRunning(false)
     , mProcess(new QProcess(this))
+    , mRestartTimer(new QTimer(this))
 {
     setWindowTitle(tr("SSH Proxy"));
     setWindowIcon(mConnectedIcon);
@@ -144,6 +145,8 @@ MainDialog::MainDialog(QWidget *parent)
     connect(mProcess, SIGNAL(readyReadStandardOutput(void)),
             this, SLOT(on_mProcess_readyReadStandardOutput(void)));
 
+    connect(mRestartTimer, SIGNAL(timeout(void)), this, SLOT(startRunning(void)));
+
     if (mHostEdit->text().isEmpty())
         mHostEdit->setFocus();
     else if (mPortEdit->text().isEmpty())
@@ -220,7 +223,7 @@ void MainDialog::on_mProcess_finished(int exitCode, QProcess::ExitStatus exitSta
               .arg(exitStatus == QProcess::NormalExit ? "NormalExit" : "CrashExit"));
     setSshStatus(StatSleeping);
 
-    /* TODO setup restart timer */
+    mRestartTimer->start(1000 * mWaitEdit->text().toInt());
 }
 
 void MainDialog::on_mProcess_error(QProcess::ProcessError error)
@@ -229,7 +232,7 @@ void MainDialog::on_mProcess_error(QProcess::ProcessError error)
     setSshStatus(StatSleeping);
     mProcess->kill();
 
-    /* TODO setup restart timer */
+    mRestartTimer->start(1000 * mWaitEdit->text().toInt());
 }
 
 void MainDialog::on_mProcess_readyReadStandardOutput(void)

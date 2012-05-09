@@ -9,6 +9,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QSystemTrayIcon>
+#include <QTimer>
 
 #include "constants.hpp"
 
@@ -38,10 +39,11 @@ private slots:
     void setSshStatus(SshStatus status);
     void addLogMsg(LogLevel level, const QString &msg);
 
+    void startRunning(void);
+
 private:
     void saveSettings(void);
 
-    void startRunning(void);
     void stopRunning(void);
 
 private:
@@ -73,6 +75,7 @@ private:
 
     bool mIsKeepRunning;
     QProcess *mProcess;
+    QTimer *mRestartTimer;
 };
 
 #endif
