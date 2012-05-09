@@ -107,7 +107,7 @@ MainDialog::MainDialog(QWidget *parent)
     mainLayout->addWidget(splitter);
 
     setLayout(mainLayout);
-    resize(800, 600);
+    resize(1000, 600);
 
     connect(mCtrlBtn, SIGNAL(clicked(void)), this, SLOT(on_mCtrlBtn_clicked(void)));
     connect(mQuitBtn, SIGNAL(clicked(void)), this, SLOT(onQuit(void)));
@@ -363,6 +363,7 @@ void MainDialog::startRunning(void)
     arguments << "-D" << QString("%1:%2").arg(mLAddrEdit->text()).arg(mLPortEdit->text());
     arguments << "-o" << "StrictHostKeyChecking=no";
     arguments << "-o" << "PreferredAuthentications=password";
+    arguments << "-o" << "ServerAliveInterval=20";
     arguments << "-l" << mUserEdit->text();
     arguments << mHostEdit->text();
 
