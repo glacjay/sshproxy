@@ -368,8 +368,8 @@ void MainDialog::startRunning(void)
 
     QStringList env;
     env << "DISPLAY=:1";
-    env << "SSH_ASKPASS=/Users/jay/bin/sshpass";
-    env << QString("SSH_PASSWD=%1").arg(mPswdEdit->text());
+    env << QString("SSH_ASKPASS=%1").arg(QCoreApplication::applicationFilePath());
+    env << QString("GLACJAY_SSHPROXY_PASSWORD=%1").arg(mPswdEdit->text());
     mProcess->setEnvironment(env);
 
     mProcess->start("/usr/bin/ssh", arguments);
