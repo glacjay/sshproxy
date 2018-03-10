@@ -1,7 +1,8 @@
 TEMPLATE = app
-TARGET =
+TARGET = sshproxy
 DEPENDPATH += .
 INCLUDEPATH += .
+QT += widgets
 
 HEADERS += \
     MainDialog.hpp \

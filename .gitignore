@@ -1,9 +1,13 @@
+# in-tree build
 *.o
-
 *.app
-
 moc_*
 qrc_*
 Makefile
-
 sshproxy
+
+# out-of-tree build
+build/
+
+# emacs .projectile
+.projectile
