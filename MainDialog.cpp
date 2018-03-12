@@ -9,6 +9,8 @@
 #include <QSpacerItem>
 #include <QSplitter>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QDebug>
 
 #include "MainDialog.hpp"
 
@@ -21,6 +23,7 @@ MainDialog::MainDialog(QWidget *parent)
     , mLAddrEdit(new QLineEdit)
     , mLPortEdit(new QLineEdit)
     , mWaitEdit(new QLineEdit)
+    , mIndicator(new Indicator)
     , mCtrlBtn(new QPushButton(tr("Start")))
     , mQuitBtn(new QPushButton(tr("Quit")))
     , mLogList(new QListWidget)
@@ -70,6 +73,11 @@ MainDialog::MainDialog(QWidget *parent)
     QLabel *waitLabel = new QLabel(tr("Seconds wait to reconnect:"));
     waitLabel->setBuddy(mWaitEdit);
 
+    mIndicator->setState(Indicator::State::Off);
+    QHBoxLayout *ctrlLayout = new QHBoxLayout;
+    ctrlLayout->addWidget(mIndicator);
+    ctrlLayout->addWidget(mCtrlBtn);
+
     QVBoxLayout *inputLayout = new QVBoxLayout;
     inputLayout->addWidget(hostLabel);
     inputLayout->addWidget(mHostEdit);
@@ -86,7 +94,7 @@ MainDialog::MainDialog(QWidget *parent)
     inputLayout->addWidget(waitLabel);
     inputLayout->addWidget(mWaitEdit);
     inputLayout->insertStretch(-1);
-    inputLayout->addWidget(mCtrlBtn);
+    inputLayout->addLayout(ctrlLayout, -1);
     inputLayout->addWidget(mQuitBtn);
 
     QGroupBox *inputGroup = new QGroupBox(tr("Settings"));
@@ -176,12 +184,18 @@ void MainDialog::closeEvent(QCloseEvent *event)
 
 void MainDialog::on_mCtrlBtn_clicked(void)
 {
-    if (mCtrlBtn->text() == tr("Start"))
+    if (mIndicator->state() == Indicator::State::Off)
+    {
         startRunning();
-    else if (mCtrlBtn->text() == tr("Stop"))
+    }
+    else if (mIndicator->state() == Indicator::State::On)
+    {
         stopRunning();
-    else
-        assert(false);
+    }
+    else // busy
+    {
+        assert(!mCtrlBtn->isEnabled());
+    }
 }
 
 void MainDialog::onQuit(void)
@@ -315,7 +329,9 @@ void MainDialog::saveSettings(void)
 void MainDialog::startRunning(void)
 {
     mIsKeepRunning = true;
-    mCtrlBtn->setText(tr("Stop"));
+    mCtrlBtn->setText(tr("..."));
+    mCtrlBtn->setEnabled(false);
+    mIndicator->setState(Indicator::State::Busy);
 
     if (mHostEdit->text().isEmpty())
     {
@@ -374,13 +390,25 @@ void MainDialog::startRunning(void)
     mProcess->setEnvironment(env);
 
     mProcess->start("/usr/bin/ssh", arguments);
+
+    mIndicator->setState(Indicator::State::On);
+    mCtrlBtn->setText(tr("Stop"));
+    mCtrlBtn->setEnabled(true);
 }
 
 void MainDialog::stopRunning(void)
 {
     mIsKeepRunning = false;
-    mCtrlBtn->setText(tr("Start"));
+    mCtrlBtn->setText(tr("..."));
+    mCtrlBtn->setEnabled(false);
+    mIndicator->setState(Indicator::State::Busy);
 
     if (mProcess->state() != QProcess::NotRunning)
+    {
         mProcess->kill();
+    }
+
+    mIndicator->setState(Indicator::State::Off);
+    mCtrlBtn->setText(tr("Start"));
+    mCtrlBtn->setEnabled(true);
 }

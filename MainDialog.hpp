@@ -12,6 +12,7 @@
 #include <QTimer>
 
 #include "constants.hpp"
+#include "Indicator.hpp"
 
 class MainDialog : public QDialog
 {
@@ -54,6 +55,8 @@ private:
     QLineEdit *mLAddrEdit;
     QLineEdit *mLPortEdit;
     QLineEdit *mWaitEdit;
+
+    Indicator *mIndicator;
 
     QPushButton *mCtrlBtn;
     QPushButton *mQuitBtn;
